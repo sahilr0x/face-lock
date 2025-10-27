@@ -1,0 +1,47 @@
+{
+  "name": "face-clock-in",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "mcp": "tsx mcp/index.ts",
+    "mcp:dev": "nodemon --exec tsx mcp/index.ts",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:studio": "prisma studio"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.20.1",
+    "@prisma/client": "^6.17.1",
+    "@types/body-parser": "^1.19.6",
+    "@types/express": "^5.0.3",
+    "body-parser": "^2.2.0",
+    "canvas": "^3.2.0",
+    "cosine-similarity": "^1.0.1",
+    "express": "^5.1.0",
+    "face-api.js": "^0.22.2",
+    "next": "15.5.6",
+    "pg": "^8.16.3",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "15.5.6",
+    "nodemon": "^3.0.2",
+    "prisma": "^6.17.1",
+    "tailwindcss": "^4",
+    "tsx": "^4.20.6",
+    "typescript": "^5"
+  }
+}
