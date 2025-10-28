@@ -10,28 +10,48 @@ async function callMCPTool(
   toolName: string,
   args: Record<string, unknown>
 ): Promise<Record<string, unknown>> {
-  try {
-    const response = await fetch(`${MCP_SERVER_URL}/mcp/tool`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        name: toolName,
-        arguments: args,
-      }),
-    });
+  const maxRetries = 2;
+  let lastError: unknown;
 
-    if (!response.ok) {
-      throw new Error(`MCP server error: ${response.statusText}`);
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 300_000); // 5 minutes safeguard
+
+      const response = await fetch(`${MCP_SERVER_URL}/mcp/tool`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: toolName,
+          arguments: args,
+        }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeout);
+
+      if (!response.ok) {
+        throw new Error(`MCP server error: ${response.status} ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      return result;
+    } catch (error) {
+      lastError = error;
+      const message = (error as Error).message || "";
+      const isTimeout = message.includes("Timeout") || message.includes("UND_ERR_HEADERS_TIMEOUT") || message.includes("The operation was aborted");
+      if (attempt < maxRetries && isTimeout) {
+        await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+        continue;
+      }
+      console.error(`Error calling MCP tool ${toolName} (attempt ${attempt + 1}):`, error);
+      break;
     }
-
-    const result = await response.json();
-    return result;
-  } catch (error) {
-    console.error(`Error calling MCP tool ${toolName}:`, error);
-    throw new Error(`Failed to call MCP tool: ${(error as Error).message}`);
   }
+
+  throw new Error(`Failed to call MCP tool: ${(lastError as Error)?.message || "unknown error"}`);
 }
 
 /**

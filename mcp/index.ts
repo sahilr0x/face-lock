@@ -6,7 +6,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { generateFaceEmbedding } from "./tools/faceEmbedding";
+import { generateFaceEmbedding, warmupFaceApi } from "./tools/faceEmbedding";
 import { compareFaceEmbeddings } from "./tools/faceCompare";
 import { logAttendance } from "./tools/attendance";
 
@@ -205,5 +205,14 @@ app.listen(PORT, () => {
 
 
 startMCPServer().catch(console.error);
+
+(async () => {
+  try {
+    console.log("Warming up face-api.js models...");
+    await warmupFaceApi();
+  } catch (e) {
+    console.warn("Warmup failed:", (e as Error).message);
+  }
+})();
 
 export default app;

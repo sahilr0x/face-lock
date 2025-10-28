@@ -144,9 +144,7 @@ export async function POST(request: NextRequest) {
           candidate.embedding
         );
         console.log(
-          `Candidate ${index + 1} (${
-            candidate.name
-          }): similarity = ${similarity.toFixed(4)}`
+          `Candidate ${index + 1} (${candidate.name}): similarity = ${similarity.toFixed(4)}`
         );
       }
 

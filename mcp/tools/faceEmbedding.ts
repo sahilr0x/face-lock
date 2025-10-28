@@ -3,7 +3,6 @@ import { Canvas, Image, ImageData } from "canvas";
 import * as fs from "fs";
 import * as path from "path";
 
-
 faceapi.env.monkeyPatch({
   Canvas: Canvas as any,
   Image: Image as any,
@@ -13,11 +12,22 @@ faceapi.env.monkeyPatch({
 let modelsLoaded = false;
 
 
-async function loadModels() {
-  if (modelsLoaded) return;
+function getDetectorOptions() {
+  const inputSize = Number(process.env.MCP_DETECTOR_INPUT_SIZE || 224);
+  const scoreThreshold = Number(process.env.MCP_DETECTOR_THRESHOLD || 0.5);
+  return new faceapi.TinyFaceDetectorOptions({ inputSize, scoreThreshold });
+}
 
+
+async function loadModels() {
+  if (modelsLoaded) {
+    console.log("📦 [MODELS] Models already loaded, skipping...");
+    return;
+  }
+
+  const loadStart = Date.now();
   try {
-    console.log("Loading face-api.js models...");
+    console.log(" [MODELS] Loading face-api.js models...");
 
     // Load the actual models from the public/models directory
     const modelPath = path.join(process.cwd(), "public", "models");
@@ -29,19 +39,24 @@ async function loadModels() {
       );
     }
 
-    console.log("Loading models from:", modelPath);
+    console.log(" [MODELS] Loading models from:", modelPath);
 
-    // // Load models with proper error handling
-    // await Promise.all([
-    //   faceapi.nets.tinyFaceDetector.loadFromUri(modelPath),
-    //   faceapi.nets.faceLandmark68Net.loadFromUri(modelPath),
-    //   faceapi.nets.faceRecognitionNet.loadFromUri(modelPath),
-    // ]);
+    const detectorStart = Date.now();
+    await faceapi.nets.tinyFaceDetector.loadFromDisk(modelPath);
+    console.log(` [MODELS] TinyFaceDetector loaded in: ${Date.now() - detectorStart}ms`);
+
+    const landmarksStart = Date.now();
+    await faceapi.nets.faceLandmark68Net.loadFromDisk(modelPath);
+    console.log(` [MODELS] FaceLandmark68Net loaded in: ${Date.now() - landmarksStart}ms`);
+
+    const recognitionStart = Date.now();
+    await faceapi.nets.faceRecognitionNet.loadFromDisk(modelPath);
+    console.log(` [MODELS] FaceRecognitionNet loaded in: ${Date.now() - recognitionStart}ms`);
 
     modelsLoaded = true;
-    console.log("Face recognition models loaded successfully");
+    console.log(` [MODELS] All face recognition models loaded successfully in: ${Date.now() - loadStart}ms`);
   } catch (error) {
-    console.error("Error loading face recognition models:", error);
+    console.error("[MODELS] Error loading face recognition models:", error);
     throw new Error("Failed to load face recognition models");
   }
 }
@@ -54,45 +69,113 @@ async function loadModels() {
 export async function generateFaceEmbedding(
   base64Image: string
 ): Promise<number[]> {
+  const startTime = Date.now();
   try {
-    console.log(
-      "Generating face embedding using improved hash-based method..."
-    );
+    console.log("🔍 [FACE-EMBEDDING] Starting face embedding generation...");
 
-    // Convert base64 to buffer
-    const imageBuffer = Buffer.from(base64Image, "base64");
+    const modelLoadStart = Date.now();
+    await loadModels();
+    console.log(` [FACE-EMBEDDING] Model loading took: ${Date.now() - modelLoadStart}ms`);
 
-    // Create a more stable hash-based embedding
-    const crypto = require("crypto");
+    const imageProcessStart = Date.now();
+    let imageBuffer = Buffer.from(base64Image, "base64");
+    console.log(`[FACE-EMBEDDING] Original image buffer size: ${imageBuffer.length} bytes`);
 
-    // Use multiple hash functions for better distribution
-    const hash1 = crypto.createHash("sha256").update(imageBuffer).digest("hex");
-    const hash2 = crypto.createHash("md5").update(imageBuffer).digest("hex");
-    const hash3 = crypto.createHash("sha1").update(imageBuffer).digest("hex");
-
-    // Create a combined hash for better distribution
-    const combinedHash = hash1 + hash2 + hash3;
-
-    // Generate a 128-dimensional vector that's more stable
-    const embedding: number[] = [];
-    for (let i = 0; i < 128; i++) {
-      // Use different parts of the hash for each dimension
-      const startIndex = (i * 4) % combinedHash.length;
-      const hexQuad = combinedHash.substr(startIndex, 4);
-      const value = parseInt(hexQuad, 16);
-      // Normalize to [-1, 1] range with better distribution
-      embedding.push((value / 65535) * 2 - 1);
+    if (imageBuffer.length > 50000) {
+      console.log(" [FACE-EMBEDDING] Image too large, compressing...");
+      const sharp = require('sharp');
+      const compressedBuffer = await sharp(imageBuffer)
+        .resize(640, 480, { fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 70 })
+        .toBuffer();
+      imageBuffer = compressedBuffer;
+      console.log(`📸 [FACE-EMBEDDING] Compressed image buffer size: ${imageBuffer.length} bytes`);
     }
 
-    console.log("Generated improved embedding with length:", embedding.length);
-    console.log("Sample values:", embedding.slice(0, 5));
+    const imageLoadStart = Date.now();
+    const canvas = new Canvas(1, 1);
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
+    
+    const imageLoadPromise = new Promise<void>((resolve, reject) => {
+      img.onload = () => {
+        console.log(`⏱️  [FACE-EMBEDDING] Image loaded successfully`);
+        resolve();
+      };
+      img.onerror = (err) => {
+        console.error(`❌ [FACE-EMBEDDING] Image load error:`, err);
+        reject(new Error("Failed to load image"));
+      };
+    });
 
-    return embedding;
+    img.src = `data:image/jpeg;base64,${base64Image}`;
+    
+    await Promise.race([
+      imageLoadPromise,
+      new Promise<void>((_, reject) => 
+        setTimeout(() => reject(new Error("Image load timeout")), 5000)
+      )
+    ]);
+    console.log(`⏱️  [FACE-EMBEDDING] Image loading took: ${Date.now() - imageLoadStart}ms`);
+
+    const detectionStart = Date.now();
+    const options = getDetectorOptions();
+    console.log(`🎯 [FACE-EMBEDDING] Detector options: inputSize=${options.inputSize}, scoreThreshold=${options.scoreThreshold}`);
+    
+    const result = await Promise.race([
+      faceapi
+        .detectSingleFace(img as any, options)
+        .withFaceLandmarks()
+        .withFaceDescriptor(),
+      new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error("Face detection timeout after 30 seconds")), 30000)
+      )
+    ]);
+
+    console.log(`⏱️  [FACE-EMBEDDING] Face detection + landmarks + descriptor took: ${Date.now() - detectionStart}ms`);
+
+    if (!result || !result.descriptor) {
+      throw new Error("No face descriptor could be computed (no face or low confidence)");
+    }
+
+    console.log(`✅ [FACE-EMBEDDING] Generated face embedding with length: ${result.descriptor.length}`);
+    console.log(`📊 [FACE-EMBEDDING] Sample values:`, Array.from(result.descriptor).slice(0, 5));
+    console.log(`⏱️  [FACE-EMBEDDING] Total processing time: ${Date.now() - startTime}ms`);
+
+    return Array.from(result.descriptor as Float32Array);
   } catch (error) {
     console.error("Error generating face embedding:", error);
     throw new Error(
       `Failed to generate face embedding: ${(error as Error).message}`
     );
+  }
+}
+
+
+export async function warmupFaceApi(): Promise<void> {
+  const warmupStart = Date.now();
+  try {
+    console.log(" [WARMUP] Starting face-api.js warmup...");
+    await loadModels();
+    
+    const canvasStart = Date.now();
+    const canvas = new Canvas(64, 64);
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, 64, 64);
+    console.log(`⏱️  [WARMUP] Canvas creation took: ${Date.now() - canvasStart}ms`);
+    
+    const detectionStart = Date.now();
+    const options = getDetectorOptions();
+    await faceapi
+      .detectSingleFace(canvas as any, options)
+      .withFaceLandmarks()
+      .withFaceDescriptor();
+    console.log(`⏱️  [WARMUP] Detection warmup took: ${Date.now() - detectionStart}ms`);
+    
+    console.log(` [WARMUP] face-api.js warmup complete in: ${Date.now() - warmupStart}ms`);
+  } catch (e) {
+    console.warn(` [WARMUP] face-api.js warmup skipped: ${(e as Error).message}`);
   }
 }
 
