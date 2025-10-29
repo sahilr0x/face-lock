@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import {
-  generateFaceEmbedding,
-  compareFaceEmbeddings,
+  compareImages,
+  checkImageMatch,
+  findBestImageMatch,
+  generateImageHash,
+  generateSimpleFingerprint,
   logAttendance,
 } from "@/lib/mcpClient";
-import { findBestFaceMatch } from "@/lib/vectorUtils";
 import { ClockInData, APIResponse } from "@/types";
 
 export async function POST(request: NextRequest) {
@@ -24,12 +26,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generate face embedding from the captured image
-    let queryEmbedding: number[];
+    // Generate image hash and fingerprint for the captured image
+    let queryHash: string;
+    let queryFingerprint: string;
     try {
-      queryEmbedding = await generateFaceEmbedding(faceImage);
+      queryHash = await generateImageHash(faceImage);
+      queryFingerprint = await generateSimpleFingerprint(faceImage);
     } catch (error) {
-      console.error("Error generating face embedding:", error);
+      console.error("Error processing face image:", error);
       return NextResponse.json(
         {
           success: false,
@@ -56,13 +60,19 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Compare with the specific user's embedding
-      const similarity = await compareFaceEmbeddings(
-        queryEmbedding,
-        user.faceEmbedding
-      );
-      const threshold = 0.6; // Adjust threshold as needed
-      const match = similarity >= threshold;
+      if (!user.faceImage) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "User has no registered face image",
+          } as APIResponse,
+          { status: 400 }
+        );
+      }
+
+      // Compare with the specific user's image
+      const matchResult = await checkImageMatch(faceImage, user.faceImage, 0.7);
+      const { match, similarity, threshold } = matchResult;
 
       if (!match) {
         return NextResponse.json(
@@ -105,7 +115,12 @@ export async function POST(request: NextRequest) {
         select: {
           id: true,
           name: true,
-          faceEmbedding: true,
+          faceImage: true,
+        },
+        where: {
+          faceImage: {
+            not: null,
+          },
         },
       });
 
@@ -113,36 +128,32 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           {
             success: false,
-            error: "No registered users found",
+            error: "No registered users with face images found",
           } as APIResponse,
           { status: 404 }
         );
       }
 
-      // Find best match
+      // Find best match using image comparison
       const candidates = users.map((user) => ({
         id: user.id,
         name: user.name,
-        embedding: user.faceEmbedding,
+        image: user.faceImage!,
       }));
 
-      const bestMatch = findBestFaceMatch(queryEmbedding, candidates, 0.1); // Lower threshold for hash-based matching
+      const bestMatch = await findBestImageMatch(faceImage, candidates, 0.7);
 
       console.log("Face matching debug:");
-      console.log("Query embedding length:", queryEmbedding.length);
       console.log("Number of candidates:", candidates.length);
       console.log("Best match similarity:", bestMatch?.similarity || 0);
-      console.log("Threshold used:", 0.1);
+      console.log("Threshold used:", 0.7);
       console.log("Best match user:", bestMatch?.name || "none");
       console.log("Match result:", bestMatch?.match || false);
 
       // Log all similarity scores for debugging
       for (let index = 0; index < candidates.length; index++) {
         const candidate = candidates[index];
-        const similarity = await compareFaceEmbeddings(
-          queryEmbedding,
-          candidate.embedding
-        );
+        const similarity = await compareImages(faceImage, candidate.image);
         console.log(
           `Candidate ${index + 1} (${candidate.name}): similarity = ${similarity.toFixed(4)}`
         );
@@ -155,7 +166,7 @@ export async function POST(request: NextRequest) {
             error: "No matching user found",
             data: {
               similarity: bestMatch?.similarity || 0,
-              threshold: 0.1,
+              threshold: 0.7,
               candidates: candidates.length,
             },
           } as APIResponse,

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { generateFaceEmbedding } from "@/lib/mcpClient";
-import { validateFaceEmbedding } from "@/lib/vectorUtils";
+import { generateImageHash, generateSimpleFingerprint } from "@/lib/mcpClient";
 import { UserRegistrationData, APIResponse } from "@/types";
 
 export async function POST(request: NextRequest) {
@@ -48,12 +47,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generate face embedding using MCP
-    let faceEmbedding: number[];
+    // Generate image hash and fingerprint using MCP
+    let faceHash: string;
+    let faceFingerprint: string;
     try {
-      faceEmbedding = await generateFaceEmbedding(faceImage);
+      faceHash = await generateImageHash(faceImage);
+      faceFingerprint = await generateSimpleFingerprint(faceImage);
     } catch (error) {
-      console.error("Error generating face embedding:", error);
+      console.error("Error processing face image:", error);
       return NextResponse.json(
         {
           success: false,
@@ -64,24 +65,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate embedding
-    const embeddingValidation = validateFaceEmbedding(faceEmbedding);
-    if (!embeddingValidation.valid) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: `Invalid face embedding: ${embeddingValidation.error}`,
-        } as APIResponse,
-        { status: 400 }
-      );
-    }
-
     // Create user in database
     const user = await prisma.user.create({
       data: {
         name,
         email,
-        faceEmbedding,
+        faceImage,
+        faceHash,
+        faceFingerprint,
       },
     });
 

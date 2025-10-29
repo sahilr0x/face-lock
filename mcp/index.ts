@@ -9,6 +9,14 @@ import {
 import { generateFaceEmbedding, warmupFaceApi } from "./tools/faceEmbedding";
 import { compareFaceEmbeddings } from "./tools/faceCompare";
 import { logAttendance } from "./tools/attendance";
+import { 
+  compareImages, 
+  checkImageMatch, 
+  findBestImageMatch,
+  generateImageHash,
+  generateSimpleFingerprint,
+  compareSimpleFingerprints
+} from "./tools/imageCompare";
 
 const app = express();
 app.use(bodyParser.json());
@@ -83,6 +91,107 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           required: ["userId", "status"],
         },
       },
+      {
+        name: "image.compare",
+        description: "Compare two images using perceptual hashing",
+        inputSchema: {
+          type: "object",
+          properties: {
+            image1: {
+              type: "string",
+              description: "First base64 encoded image",
+            },
+            image2: {
+              type: "string",
+              description: "Second base64 encoded image",
+            },
+          },
+          required: ["image1", "image2"],
+        },
+      },
+      {
+        name: "image.match",
+        description: "Check if two images match based on similarity threshold",
+        inputSchema: {
+          type: "object",
+          properties: {
+            image1: {
+              type: "string",
+              description: "First base64 encoded image",
+            },
+            image2: {
+              type: "string",
+              description: "Second base64 encoded image",
+            },
+            threshold: {
+              type: "number",
+              description: "Similarity threshold (default: 0.8)",
+              default: 0.8,
+            },
+          },
+          required: ["image1", "image2"],
+        },
+      },
+      {
+        name: "image.findBestMatch",
+        description: "Find the best matching image from a list of candidates",
+        inputSchema: {
+          type: "object",
+          properties: {
+            queryImage: {
+              type: "string",
+              description: "Query base64 encoded image",
+            },
+            candidates: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  id: { type: "string" },
+                  image: { type: "string" },
+                  name: { type: "string" },
+                },
+                required: ["id", "image"],
+              },
+              description: "Array of candidate images with metadata",
+            },
+            threshold: {
+              type: "number",
+              description: "Similarity threshold (default: 0.8)",
+              default: 0.8,
+            },
+          },
+          required: ["queryImage", "candidates"],
+        },
+      },
+      {
+        name: "image.generateHash",
+        description: "Generate perceptual hash from image",
+        inputSchema: {
+          type: "object",
+          properties: {
+            image: {
+              type: "string",
+              description: "Base64 encoded image",
+            },
+          },
+          required: ["image"],
+        },
+      },
+      {
+        name: "image.generateFingerprint",
+        description: "Generate simple hash-based fingerprint from image",
+        inputSchema: {
+          type: "object",
+          properties: {
+            image: {
+              type: "string",
+              description: "Base64 encoded image",
+            },
+          },
+          required: ["image"],
+        },
+      },
     ],
   };
 });
@@ -138,6 +247,82 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
+      case "image.compare": {
+        const { image1, image2 } = args as {
+          image1: string;
+          image2: string;
+        };
+        const similarity = await compareImages(image1, image2);
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({ similarity }),
+            },
+          ],
+        };
+      }
+
+      case "image.match": {
+        const { image1, image2, threshold = 0.8 } = args as {
+          image1: string;
+          image2: string;
+          threshold?: number;
+        };
+        const result = await checkImageMatch(image1, image2, threshold);
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(result),
+            },
+          ],
+        };
+      }
+
+      case "image.findBestMatch": {
+        const { queryImage, candidates, threshold = 0.8 } = args as {
+          queryImage: string;
+          candidates: Array<{ id: string; image: string; name?: string }>;
+          threshold?: number;
+        };
+        const result = await findBestImageMatch(queryImage, candidates, threshold);
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(result),
+            },
+          ],
+        };
+      }
+
+      case "image.generateHash": {
+        const { image } = args as { image: string };
+        const hash = await generateImageHash(image);
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({ hash }),
+            },
+          ],
+        };
+      }
+
+      case "image.generateFingerprint": {
+        const { image } = args as { image: string };
+        const fingerprint = generateSimpleFingerprint(image);
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({ fingerprint }),
+            },
+          ],
+        };
+      }
+
       default:
         throw new Error(`Unknown tool: ${name}`);
     }
@@ -184,6 +369,36 @@ app.post("/mcp/tool", async (req, res) => {
         const { userId, status } = args;
         const attendanceLog = await logAttendance(userId, status);
         result = attendanceLog;
+        break;
+      }
+      case "image.compare": {
+        const { image1, image2 } = args;
+        const similarity = await compareImages(image1, image2);
+        result = { similarity };
+        break;
+      }
+      case "image.match": {
+        const { image1, image2, threshold = 0.8 } = args;
+        const matchResult = await checkImageMatch(image1, image2, threshold);
+        result = matchResult;
+        break;
+      }
+      case "image.findBestMatch": {
+        const { queryImage, candidates, threshold = 0.8 } = args;
+        const bestMatch = await findBestImageMatch(queryImage, candidates, threshold);
+        result = bestMatch;
+        break;
+      }
+      case "image.generateHash": {
+        const { image } = args;
+        const hash = await generateImageHash(image);
+        result = { hash };
+        break;
+      }
+      case "image.generateFingerprint": {
+        const { image } = args;
+        const fingerprint = generateSimpleFingerprint(image);
+        result = { fingerprint };
         break;
       }
       default:

@@ -128,3 +128,127 @@ export async function logAttendance(
     throw new Error(`Failed to log attendance: ${(error as Error).message}`);
   }
 }
+
+/**
+ * Compare two images using MCP server
+ * @param image1 - First base64 image
+ * @param image2 - Second base64 image
+ * @returns Similarity score
+ */
+export async function compareImages(
+  image1: string,
+  image2: string
+): Promise<number> {
+  try {
+    const result = await callMCPTool("image.compare", {
+      image1,
+      image2,
+    });
+
+    return result.similarity as number;
+  } catch (error) {
+    console.error("Error comparing images:", error);
+    throw new Error(`Failed to compare images: ${(error as Error).message}`);
+  }
+}
+
+/**
+ * Check if two images match using MCP server
+ * @param image1 - First base64 image
+ * @param image2 - Second base64 image
+ * @param threshold - Similarity threshold (default: 0.8)
+ * @returns Match result with similarity score
+ */
+export async function checkImageMatch(
+  image1: string,
+  image2: string,
+  threshold: number = 0.8
+): Promise<{ match: boolean; similarity: number; threshold: number }> {
+  try {
+    const result = await callMCPTool("image.match", {
+      image1,
+      image2,
+      threshold,
+    });
+
+    return result as {
+      match: boolean;
+      similarity: number;
+      threshold: number;
+    };
+  } catch (error) {
+    console.error("Error checking image match:", error);
+    throw new Error(`Failed to check image match: ${(error as Error).message}`);
+  }
+}
+
+/**
+ * Find the best matching image from candidates using MCP server
+ * @param queryImage - Query base64 image
+ * @param candidates - Array of candidate images with metadata
+ * @param threshold - Similarity threshold (default: 0.8)
+ * @returns Best match result or null if no match found
+ */
+export async function findBestImageMatch(
+  queryImage: string,
+  candidates: Array<{
+    id: string;
+    image: string;
+    name?: string;
+  }>,
+  threshold: number = 0.8
+): Promise<{ id: string; name?: string; similarity: number; match: boolean } | null> {
+  try {
+    const result = await callMCPTool("image.findBestMatch", {
+      queryImage,
+      candidates,
+      threshold,
+    });
+
+    return result as {
+      id: string;
+      name?: string;
+      similarity: number;
+      match: boolean;
+    } | null;
+  } catch (error) {
+    console.error("Error finding best image match:", error);
+    throw new Error(`Failed to find best image match: ${(error as Error).message}`);
+  }
+}
+
+/**
+ * Generate image hash using MCP server
+ * @param image - Base64 image
+ * @returns Perceptual hash
+ */
+export async function generateImageHash(image: string): Promise<string> {
+  try {
+    const result = await callMCPTool("image.generateHash", {
+      image,
+    });
+
+    return result.hash as string;
+  } catch (error) {
+    console.error("Error generating image hash:", error);
+    throw new Error(`Failed to generate image hash: ${(error as Error).message}`);
+  }
+}
+
+/**
+ * Generate simple fingerprint using MCP server
+ * @param image - Base64 image
+ * @returns Simple hash fingerprint
+ */
+export async function generateSimpleFingerprint(image: string): Promise<string> {
+  try {
+    const result = await callMCPTool("image.generateFingerprint", {
+      image,
+    });
+
+    return result.fingerprint as string;
+  } catch (error) {
+    console.error("Error generating simple fingerprint:", error);
+    throw new Error(`Failed to generate simple fingerprint: ${(error as Error).message}`);
+  }
+}

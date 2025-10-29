@@ -99,11 +99,11 @@ export async function generateFaceEmbedding(
     
     const imageLoadPromise = new Promise<void>((resolve, reject) => {
       img.onload = () => {
-        console.log(`⏱️  [FACE-EMBEDDING] Image loaded successfully`);
+        console.log(` [FACE-EMBEDDING] Image loaded successfully`);
         resolve();
       };
       img.onerror = (err) => {
-        console.error(`❌ [FACE-EMBEDDING] Image load error:`, err);
+        console.error(`[FACE-EMBEDDING] Image load error:`, err);
         reject(new Error("Failed to load image"));
       };
     });
@@ -116,11 +116,11 @@ export async function generateFaceEmbedding(
         setTimeout(() => reject(new Error("Image load timeout")), 5000)
       )
     ]);
-    console.log(`⏱️  [FACE-EMBEDDING] Image loading took: ${Date.now() - imageLoadStart}ms`);
+    console.log(`[FACE-EMBEDDING] Image loading took: ${Date.now() - imageLoadStart}ms`);
 
     const detectionStart = Date.now();
     const options = getDetectorOptions();
-    console.log(`🎯 [FACE-EMBEDDING] Detector options: inputSize=${options.inputSize}, scoreThreshold=${options.scoreThreshold}`);
+    console.log(` [FACE-EMBEDDING] Detector options: inputSize=${options.inputSize}, scoreThreshold=${options.scoreThreshold}`);
     
     const result = await Promise.race([
       faceapi
@@ -132,15 +132,15 @@ export async function generateFaceEmbedding(
       )
     ]);
 
-    console.log(`⏱️  [FACE-EMBEDDING] Face detection + landmarks + descriptor took: ${Date.now() - detectionStart}ms`);
+    console.log(`  [FACE-EMBEDDING] Face detection + landmarks + descriptor took: ${Date.now() - detectionStart}ms`);
 
     if (!result || !result.descriptor) {
       throw new Error("No face descriptor could be computed (no face or low confidence)");
     }
 
-    console.log(`✅ [FACE-EMBEDDING] Generated face embedding with length: ${result.descriptor.length}`);
-    console.log(`📊 [FACE-EMBEDDING] Sample values:`, Array.from(result.descriptor).slice(0, 5));
-    console.log(`⏱️  [FACE-EMBEDDING] Total processing time: ${Date.now() - startTime}ms`);
+    console.log(` [FACE-EMBEDDING] Generated face embedding with length: ${result.descriptor.length}`);
+    console.log(` [FACE-EMBEDDING] Sample values:`, Array.from(result.descriptor).slice(0, 5));
+    console.log(` [FACE-EMBEDDING] Total processing time: ${Date.now() - startTime}ms`);
 
     return Array.from(result.descriptor as Float32Array);
   } catch (error) {
