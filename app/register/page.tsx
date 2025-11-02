@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import CameraFeed from "@/components/CameraFeed";
 import ResultCard from "@/components/ResultCard";
 import { CameraCapture, AttendanceResult, UserRegistrationData } from "@/types";
+import { generateFaceEmbedding } from "@/lib/clientFaceEmbedding";
+import { storeFaceEmbedding } from "@/lib/clientEntityDB";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -45,27 +47,34 @@ export default function RegisterPage() {
     setResult(null);
 
     try {
-      const registrationData: UserRegistrationData = {
-        name: formData.name,
-        email: formData.email,
-        faceImage: capturedImage,
-      };
+      // Generate face embedding client-side
+      const faceEmbedding = await generateFaceEmbedding(capturedImage);
 
+      // Register user in Prisma (server-side) - only send metadata
       const response = await fetch("/api/register", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(registrationData),
+        body: JSON.stringify({
+          name: formData.name,
+          email: formData.email,
+        }),
       });
 
       const data = await response.json();
 
       if (data.success) {
+        const userId = data.data.id;
+        await storeFaceEmbedding(userId, faceEmbedding, {
+          email: formData.email,
+          name: formData.name,
+        });
+
         setResult({
           success: true,
           message: "User registered successfully!",
-          userId: data.data.id,
+          userId,
         });
 
         // Reset form after successful registration

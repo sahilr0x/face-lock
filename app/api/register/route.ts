@@ -1,21 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { generateFaceEmbedding } from "@/lib/mcpClient";
-import { validateFaceEmbedding } from "@/lib/vectorUtils";
-import { UserRegistrationData, APIResponse } from "@/types";
+import { APIResponse } from "@/types";
 
+/**
+ * Register API - Only handles Prisma operations
+ * Face embedding generation and EntityDB storage happen client-side
+ */
 export async function POST(request: NextRequest) {
   try {
-    const body: UserRegistrationData = await request.json();
-    const { name, email, faceImage } = body;
+    const body = await request.json();
+    const { name, email } = body;
 
     // Validate input
-    if (!name || !email || !faceImage) {
+    if (!name || !email) {
       return NextResponse.json(
         {
           success: false,
-          error:
-            "Missing required fields: name, email, and faceImage are required",
+          error: "Missing required fields: name and email are required",
         } as APIResponse,
         { status: 400 }
       );
@@ -48,40 +49,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generate face embedding using MCP
-    let faceEmbedding: number[];
-    try {
-      faceEmbedding = await generateFaceEmbedding(faceImage);
-    } catch (error) {
-      console.error("Error generating face embedding:", error);
-      return NextResponse.json(
-        {
-          success: false,
-          error:
-            "Failed to process face image. Please ensure a clear face is visible.",
-        } as APIResponse,
-        { status: 400 }
-      );
-    }
-
-    // Validate embedding
-    const embeddingValidation = validateFaceEmbedding(faceEmbedding);
-    if (!embeddingValidation.valid) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: `Invalid face embedding: ${embeddingValidation.error}`,
-        } as APIResponse,
-        { status: 400 }
-      );
-    }
-
-    // Create user in database
+    // Create user in Prisma database only
+    // Face embedding and EntityDB storage happen client-side
     const user = await prisma.user.create({
       data: {
         name,
         email,
-        faceEmbedding,
       },
     });
 

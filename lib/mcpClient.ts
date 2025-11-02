@@ -128,3 +128,102 @@ export async function logAttendance(
     throw new Error(`Failed to log attendance: ${(error as Error).message}`);
   }
 }
+
+
+export async function compareImages(
+  image1: string,
+  image2: string
+): Promise<number> {
+  try {
+    const result = await callMCPTool("image.compare", {
+      image1,
+      image2,
+    });
+
+    return result.similarity as number;
+  } catch (error) {
+    console.error("Error comparing images:", error);
+    throw new Error(`Failed to compare images: ${(error as Error).message}`);
+  }
+}
+
+
+export async function checkImageMatch(
+  image1: string,
+  image2: string,
+  threshold: number = 0.8
+): Promise<{ match: boolean; similarity: number; threshold: number }> {
+  try {
+    const result = await callMCPTool("image.match", {
+      image1,
+      image2,
+      threshold,
+    });
+
+    return result as {
+      match: boolean;
+      similarity: number;
+      threshold: number;
+    };
+  } catch (error) {
+    console.error("Error checking image match:", error);
+    throw new Error(`Failed to check image match: ${(error as Error).message}`);
+  }
+}
+
+
+export async function findBestImageMatch(
+  queryImage: string,
+  candidates: Array<{
+    id: string;
+    image: string;
+    name?: string;
+  }>,
+  threshold: number = 0.8
+): Promise<{ id: string; name?: string; similarity: number; match: boolean } | null> {
+  try {
+    const result = await callMCPTool("image.findBestMatch", {
+      queryImage,
+      candidates,
+      threshold,
+    });
+
+    return result as {
+      id: string;
+      name?: string;
+      similarity: number;
+      match: boolean;
+    } | null;
+  } catch (error) {
+    console.error("Error finding best image match:", error);
+    throw new Error(`Failed to find best image match: ${(error as Error).message}`);
+  }
+}
+
+
+export async function generateImageHash(image: string): Promise<string> {
+  try {
+    const result = await callMCPTool("image.generateHash", {
+      image,
+    });
+
+    return result.hash as string;
+  } catch (error) {
+    console.error("Error generating image hash:", error);
+    throw new Error(`Failed to generate image hash: ${(error as Error).message}`);
+  }
+}
+
+
+export async function generateSimpleFingerprint(image: string): Promise<string> {
+  try {
+    const result = await callMCPTool("image.generateFingerprint", {
+      image,
+    });
+
+    return result.fingerprint as string;
+  } catch (error) {
+    console.error("Error generating simple fingerprint:", error);
+    throw new Error(`Failed to generate simple fingerprint: ${(error as Error).message}`);
+  }
+}

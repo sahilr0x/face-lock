@@ -6,6 +6,8 @@ import CameraFeed from "@/components/CameraFeed";
 import AutomaticClockInButton from "@/components/AutomaticClockInButton";
 import ResultCard from "@/components/ResultCard";
 import { CameraCapture, AttendanceResult } from "@/types";
+import { generateFaceEmbedding } from "@/lib/clientFaceEmbedding";
+import { findBestFaceMatch, clearEntityDB } from "@/lib/clientEntityDB";
 
 export default function ClockInPage() {
   const router = useRouter();
@@ -15,6 +17,7 @@ export default function ClockInPage() {
   const [lastStatus, setLastStatus] = useState<
     "CLOCK_IN" | "CLOCK_OUT" | undefined
   >(undefined);
+  const [showDatabaseFix, setShowDatabaseFix] = useState(false);
 
   const handleCapture = (capture: CameraCapture) => {
     setCapturedImage(capture.imageData);
@@ -27,13 +30,31 @@ export default function ClockInPage() {
     setResult(null);
 
     try {
+      // Generate face embedding client-side
+      const queryEmbedding = await generateFaceEmbedding(capture.imageData);
+
+      // Query EntityDB for matching face (client-side IndexedDB)
+      // Using lower threshold (0.7) as face embeddings can vary slightly
+      // The server-side was using 0.9 which might be too strict
+      const bestMatch = await findBestFaceMatch(queryEmbedding, 0.7);
+
+      if (!bestMatch) {
+        const result: AttendanceResult = {
+          success: false,
+          message: "No matching user found. Please ensure you are registered.",
+        };
+        setResult(result);
+        return result;
+      }
+
+      // Only send user ID to server - no embeddings!
       const response = await fetch("/api/clockin", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          faceImage: capture.imageData,
+          userId: bestMatch.id,
         }),
       });
 
@@ -46,7 +67,7 @@ export default function ClockInPage() {
           userId: data.data.userId,
           status: data.data.status,
           timestamp: new Date(data.data.timestamp),
-          similarity: data.data.similarity,
+          similarity: bestMatch.score, // Use client-side similarity score
         };
 
         setLastStatus(data.data.status);
@@ -61,9 +82,27 @@ export default function ClockInPage() {
         return result;
       }
     } catch (error) {
+      const errorMessage = (error as Error).message;
+      
+      // Check if error is about old data format
+      if (
+        errorMessage.includes("Cannot read properties of undefined") ||
+        errorMessage.includes("old format data") ||
+        errorMessage.includes("undefined")
+      ) {
+        setShowDatabaseFix(true);
+        const result: AttendanceResult = {
+          success: false,
+          message:
+            "Database contains old format data. Please clear the database and re-register users. Click 'Clear Database' button below to fix this.",
+        };
+        setResult(result);
+        return result;
+      }
+
       const result: AttendanceResult = {
         success: false,
-        message: `Clock-in failed: ${(error as Error).message}`,
+        message: `Clock-in failed: ${errorMessage}`,
       };
       setResult(result);
       return result;
@@ -78,6 +117,29 @@ export default function ClockInPage() {
     // Clock-out is handled the same way as clock-in
     // The API determines the action based on the last status
     return handleClockIn(capture);
+  };
+
+  const handleClearDatabase = async () => {
+    try {
+      setIsProcessing(true);
+      await clearEntityDB();
+      setShowDatabaseFix(false);
+      setResult({
+        success: true,
+        message:
+          "Database cleared successfully! Please re-register users before clocking in.",
+      });
+      setTimeout(() => {
+        setResult(null);
+      }, 3000);
+    } catch (error) {
+      setResult({
+        success: false,
+        message: `Failed to clear database: ${(error as Error).message}`,
+      });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -197,6 +259,27 @@ export default function ClockInPage() {
           {result && (
             <div className="mt-8">
               <ResultCard result={result} />
+              {showDatabaseFix && (
+                <div className="mt-4 p-4 bg-yellow-100 border border-yellow-400 text-yellow-800 rounded-lg">
+                  <p className="font-semibold mb-2">
+                    Database Format Issue Detected
+                  </p>
+                  <p className="text-sm mb-4">
+                    Your database contains old format data. Please clear it and
+                    re-register users with the new format.
+                  </p>
+                  <button
+                    onClick={handleClearDatabase}
+                    disabled={isProcessing}
+                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {isProcessing ? "Clearing..." : "Clear Database"}
+                  </button>
+                  <p className="text-xs mt-2 text-yellow-700">
+                    After clearing, go to Register page and re-register users.
+                  </p>
+                </div>
+              )}
             </div>
           )}
 

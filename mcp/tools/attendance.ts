@@ -40,7 +40,7 @@ export async function logAttendance(
     console.error("Error logging attendance:", error);
     throw new Error(`Failed to log attendance: ${(error as Error).message}`);
   } finally {
-    await prisma.$disconnect();
+
   }
 }
 
