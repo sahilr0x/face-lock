@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { generateImageHash, generateSimpleFingerprint } from "@/lib/mcpClient";
+import { generateFaceEmbedding } from "@/lib/mcpClient";
+import { entityDb } from "@/lib/entityDbInstance";
+import { faceEmbeddingToBinary } from "@/lib/entityDb";
 import { UserRegistrationData, APIResponse } from "@/types";
 
 export async function POST(request: NextRequest) {
@@ -47,34 +49,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generate image hash and fingerprint using MCP
-    let faceHash: string;
-    let faceFingerprint: string;
+    // Compute embedding for registration and store ONLY in in-memory EntityDB
+    let embedding: number[];
     try {
-      faceHash = await generateImageHash(faceImage);
-      faceFingerprint = await generateSimpleFingerprint(faceImage);
+      embedding = await generateFaceEmbedding(faceImage);
     } catch (error) {
-      console.error("Error processing face image:", error);
+      console.error("Error generating face embedding:", error);
       return NextResponse.json(
         {
           success: false,
           error:
-            "Failed to process face image. Please ensure a clear face is visible.",
+            "Failed to generate face embedding. Please ensure a clear face is visible.",
         } as APIResponse,
         { status: 400 }
       );
     }
 
-    // Create user in database
+    // Create user metadata in Prisma (no face data persisted)
     const user = await prisma.user.create({
       data: {
         name,
         email,
-        faceImage,
-        faceHash,
-        faceFingerprint,
       },
     });
+
+    // Upsert into EntityDB with binarized vector
+    const binary = faceEmbeddingToBinary(embedding);
+    entityDb.upsert({ id: user.id, vector: binary, metadata: { name, email } });
 
     return NextResponse.json({
       success: true,
